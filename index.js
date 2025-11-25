@@ -316,20 +316,22 @@ app.post('/make-labels', async (req, res) => {
       // ---------- 4. Footer unten ----------
       // Datum + Kürzel links
       const footerText = packer ? `Erstellt: ${ts} · ${packer}` : `Erstellt: ${ts}`;
-      const footerTextY = pageH - margin - mm(6); // etwas weiter nach oben
+
+      // Deutlich weiter nach oben, damit garantiert kein automatischer Umbruch kommt
+      const footerTextY = pageH - margin - mm(18);
 
       doc.font('Helvetica').fontSize(10);
+      // Vereinfachter Aufruf ohne width/align → geringere Chance auf Pagebreak
       doc.text(footerText, margin, footerTextY, {
-        width: usableWidth - mm(24), // Platz fürs Logo rechts
-        align: 'left',
-        lineBreak: false,            // WICHTIG: kein Zeilenumbruch → keine neue Seite
+        lineBreak: false,
       });
 
-      // Logo rechts unten, unverzerrt
+      // Logo rechts unten, etwas höher, damit alles sicher auf der Seite bleibt
       const logoMaxW = mm(20);
       const logoMaxH = mm(10);
       const logoX = pageW - margin - logoMaxW;
-      const logoY = pageH - margin - logoMaxH;
+      const logoY = pageH - margin - mm(20); // auf etwa gleicher Höhe wie Text bzw. minimal tiefer
+
 
       try {
         doc.image(RESOLVED_LOGO_PATH, logoX, logoY, {
