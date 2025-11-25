@@ -209,7 +209,7 @@ app.post('/make-labels', async (req, res) => {
       timeStyle: 'medium',
     }).format(createdAt);
 
-    // Seitenformat: 100 x 150 mm
+    // Seitenformat: 100 x 150 mm (Hochformat)
     const pageW = mm(100);
     const pageH = mm(150);
     const margin = mm(4);
@@ -229,11 +229,11 @@ app.post('/make-labels', async (req, res) => {
 
     const projectAndDrawing = `${rawProject} – ${rawDrawing}`;
 
-    // Helper für eine Zeile
-    const fitOneLine = (text, fontName, maxPt, minPt = 10) => {
+    // Helper: Text in EINE Zeile passend machen
+    const fitOneLine = (text, fontName, maxPt, minPt = 10, width = usableWidth) => {
       doc.font(fontName);
       for (let size = maxPt; size >= minPt; size--) {
-        if (doc.fontSize(size).widthOfString(text) <= usableWidth) return size;
+        if (doc.fontSize(size).widthOfString(text) <= width) return size;
       }
       return minPt;
     };
@@ -241,58 +241,66 @@ app.post('/make-labels', async (req, res) => {
     for (let i = 1; i <= count; i++) {
       doc.addPage({ size: [pageW, pageH] });
 
-      // Koordinaten wie im Muster-PDF
-      // Projekt-Box
+      // ---------- 1. Projekt-Box oben ----------
       const projectBoxHeight = mm(28);
-      const projectBoxY = pageH - margin - projectBoxHeight - mm(20);
+      const projectBoxY = margin;
       const projectBoxX = margin;
 
       doc.lineWidth(2);
       doc.rect(projectBoxX, projectBoxY, usableWidth, projectBoxHeight).stroke();
 
-      // Projektname
-      const projSize = fitOneLine(rawProject, 'Helvetica-Bold', 18, 12);
+      // Projektname (oben in der Box)
+      const projSize = fitOneLine(rawProject, 'Helvetica-Bold', 22, 12);
       doc.font('Helvetica-Bold').fontSize(projSize);
-      doc.text(rawProject, projectBoxX, projectBoxY + projectBoxHeight - mm(9), {
+      doc.text(rawProject, projectBoxX, projectBoxY + mm(4), {
         width: usableWidth,
         align: 'center',
       });
 
-      // Zeichnungsnummer
-      const drawSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 16, 10);
+      // Zeichnungsnummer (darunter in der Box)
+      const drawSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 20, 10);
       doc.font('Helvetica-Bold').fontSize(drawSize);
-      doc.text(rawDrawing, projectBoxX, projectBoxY + mm(7), {
+      doc.text(rawDrawing, projectBoxX, projectBoxY + projectBoxHeight / 2, {
         width: usableWidth,
         align: 'center',
       });
 
-      // Palette-Zeile: "Palette" klein, Bruch groß
-      const paletteY = projectBoxY - mm(12);
-      const textPalette = 'Palette';
+      let y = projectBoxY + projectBoxHeight + mm(8);
+
+      // ---------- 2. Zeile "Palette 1/1" ----------
+      const labelPalette = 'Palette';
       const textFrac = `${i}/${count}`;
 
+      // Fraktion so groß wie Projekt
+      const fracSize = projSize;
+
+      // Breiten ermitteln
       doc.font('Helvetica-Bold').fontSize(10);
-      const paletteW = doc.widthOfString(textPalette);
-      doc.font('Helvetica-Bold').fontSize(26);
+      const paletteW = doc.widthOfString(labelPalette);
+      doc.font('Helvetica-Bold').fontSize(fracSize);
       const fracW = doc.widthOfString(textFrac);
 
       const totalW = paletteW + mm(3) + fracW;
       const startX = (pageW - totalW) / 2;
 
-      // "Palette" (klein)
+      // "Palette" klein links
       doc.font('Helvetica-Bold').fontSize(10);
-      doc.text(textPalette, startX, paletteY + mm(5));
+      const paletteY = y + mm(4);
+      doc.text(labelPalette, startX, paletteY);
 
-      // "1/3" (groß)
-      doc.font('Helvetica-Bold').fontSize(26);
-      doc.text(textFrac, startX + paletteW + mm(3), paletteY);
+      // "1/1" groß rechts daneben
+      doc.font('Helvetica-Bold').fontSize(fracSize);
+      const fracY = y; // etwas höher, damit optisch auf einer Linie
+      doc.text(textFrac, startX + paletteW + mm(3), fracY);
 
-      // QR-Bereich
+      y = paletteY + mm(14); // Platz nach der Zeile
+
+      // ---------- 3. QR-Code mittig ----------
       const qrSize = mm(60);
       const qrX = (pageW - qrSize) / 2;
-      const qrY = paletteY - mm(10) - qrSize;
+      const qrY = y;
 
-      // QR-Code: URL zum Complete-Endpoint
+      // Todoist-Aufgabe für diese Palette
       const taskTitle = `${projectAndDrawing} – Palette ${i}/${count}`;
       const task = await createTodoistTask(taskTitle);
       const taskId = task.id;
@@ -304,25 +312,32 @@ app.post('/make-labels', async (req, res) => {
 
       doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
 
-      // Footer links: Datum + Kürzel (falls vorhanden)
+      // ---------- 4. Footer unten ----------
+      // Datum + Kürzel links
       const footerText = packer ? `Erstellt: ${ts} · ${packer}` : `Erstellt: ${ts}`;
+      const footerTextY = pageH - margin - mm(4); // nah am unteren Rand
+
       doc.font('Helvetica').fontSize(10);
-      doc.text(footerText, margin, margin + mm(2), {
-        width: usableWidth - mm(24), // etwas Platz fürs Logo rechts
+      doc.text(footerText, margin, footerTextY, {
+        width: usableWidth - mm(24), // Platz fürs Logo rechts
         align: 'left',
       });
 
-      // Footer rechts: Logo (falls vorhanden)
-      const logoW = mm(20);
-      const logoH = mm(10);
-      const logoX = pageW - margin - logoW;
-      const logoY = margin + mm(0.5);
+      // Logo rechts unten, unverzerrt
+      const logoMaxW = mm(20);
+      const logoMaxH = mm(10);
+      const logoX = pageW - margin - logoMaxW;
+      const logoY = pageH - margin - logoMaxH;
 
       try {
-        doc.image(RESOLVED_LOGO_PATH, logoX, logoY, { width: logoW, height: logoH });
+        doc.image(RESOLVED_LOGO_PATH, logoX, logoY, {
+          fit: [logoMaxW, logoMaxH], // Seitenverhältnis beibehalten
+          align: 'right',
+          valign: 'bottom',
+        });
       } catch (e) {
         console.warn('Logo konnte nicht geladen werden:', e.message);
-        // Falls Logo fehlt, nicht abstürzen
+        // Wenn Logo fehlt, PDF trotzdem erstellen
       }
     }
 
@@ -332,6 +347,7 @@ app.post('/make-labels', async (req, res) => {
     res.status(500).send('Fehler beim Erzeugen der Labels. Details in der Server-Konsole.');
   }
 });
+
 
 /* =========================
    Start Server
