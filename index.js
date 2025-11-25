@@ -249,16 +249,16 @@ app.post('/make-labels', async (req, res) => {
       doc.lineWidth(2);
       doc.rect(projectBoxX, projectBoxY, usableWidth, projectBoxHeight).stroke();
 
-      // Projektname (oben in der Box)
-      const projSize = fitOneLine(rawProject, 'Helvetica-Bold', 22, 12);
+      // Projektname (oben in der Box) – MAXIMAL groß
+      const projSize = fitOneLine(rawProject, 'Helvetica-Bold', 26, 12);
       doc.font('Helvetica-Bold').fontSize(projSize);
       doc.text(rawProject, projectBoxX, projectBoxY + mm(4), {
         width: usableWidth,
         align: 'center',
       });
 
-      // Zeichnungsnummer (darunter in der Box)
-      const drawSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 20, 10);
+      // Zeichnungsnummer – ebenfalls groß, aber etwas kleiner
+      const drawSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 22, 10);
       doc.font('Helvetica-Bold').fontSize(drawSize);
       doc.text(rawDrawing, projectBoxX, projectBoxY + projectBoxHeight / 2, {
         width: usableWidth,
@@ -271,7 +271,7 @@ app.post('/make-labels', async (req, res) => {
       const labelPalette = 'Palette';
       const textFrac = `${i}/${count}`;
 
-      // Fraktion so groß wie Projekt
+      // Bruch so groß wie Projekt
       const fracSize = projSize;
 
       // Breiten ermitteln
@@ -283,20 +283,21 @@ app.post('/make-labels', async (req, res) => {
       const totalW = paletteW + mm(3) + fracW;
       const startX = (pageW - totalW) / 2;
 
-      // "Palette" klein links
+      // "Palette" (klein)
       doc.font('Helvetica-Bold').fontSize(10);
       const paletteY = y + mm(4);
       doc.text(labelPalette, startX, paletteY);
 
-      // "1/1" groß rechts daneben
+      // "1/1" (groß)
       doc.font('Helvetica-Bold').fontSize(fracSize);
-      const fracY = y; // etwas höher, damit optisch auf einer Linie
+      const fracY = y;
       doc.text(textFrac, startX + paletteW + mm(3), fracY);
 
       y = paletteY + mm(14); // Platz nach der Zeile
 
       // ---------- 3. QR-Code mittig ----------
-      const qrSize = mm(60);
+      // etwas kleiner als vorher, damit sicher Platz für Footer ist
+      const qrSize = mm(56);
       const qrX = (pageW - qrSize) / 2;
       const qrY = y;
 
@@ -315,12 +316,13 @@ app.post('/make-labels', async (req, res) => {
       // ---------- 4. Footer unten ----------
       // Datum + Kürzel links
       const footerText = packer ? `Erstellt: ${ts} · ${packer}` : `Erstellt: ${ts}`;
-      const footerTextY = pageH - margin - mm(4); // nah am unteren Rand
+      const footerTextY = pageH - margin - mm(6); // etwas weiter nach oben
 
       doc.font('Helvetica').fontSize(10);
       doc.text(footerText, margin, footerTextY, {
         width: usableWidth - mm(24), // Platz fürs Logo rechts
         align: 'left',
+        lineBreak: false,            // WICHTIG: kein Zeilenumbruch → keine neue Seite
       });
 
       // Logo rechts unten, unverzerrt
@@ -347,6 +349,7 @@ app.post('/make-labels', async (req, res) => {
     res.status(500).send('Fehler beim Erzeugen der Labels. Details in der Server-Konsole.');
   }
 });
+
 
 
 /* =========================
