@@ -281,24 +281,29 @@ app.post('/make-labels', async (req, res) => {
         width: barW - mm(4),
         align: 'center',
       });
+// ===== 3) Paletten-Balken mit "Palette" + großer 1/x =====
+doc.rect(barX, palletBarY, barW, barHeight3).stroke();
 
-      // ===== 3) Paletten-Balken mit großer 1/x =====
-      doc.rect(barX, palletBarY, barW, barHeight3).stroke();
+// "Palette" klein, IM Balken oben links
+doc.font('Helvetica-Bold').fontSize(10);
+const paletteLabelY = palletBarY + mm(3);
+doc.text('Palette', barX + mm(4), paletteLabelY, { lineBreak: false });
 
-      const fracText = `${i}/${count}`;
-      const fracFontSize = fitOneLine(fracText, 'Helvetica-Bold', 66, 18, barW - mm(4));
-      doc.font('Helvetica-Bold').fontSize(fracFontSize);
-      // vertikal zentriert im 3. Balken
-      const fracTextY = palletBarY + (barHeight3 - doc.currentLineHeight()) / 2;
-      doc.text(fracText, barX + mm(2), fracTextY, {
-        width: barW - mm(4),
-        align: 'center',
-      });
+// Große 1/x mittig im Balken, mit Abstand zur oberen Linie
+const fracText = `${i}/${count}`;
+const fracFontSize = fitOneLine(fracText, 'Helvetica-Bold', 66, 18, barW - mm(4));
+doc.font('Helvetica-Bold').fontSize(fracFontSize);
 
-      // ===== 4) "Palette" klein, ÜBER dem Paletten-Balken links =====
-      const paletteLabelY = palletBarY - mm(4); // etwas über der Linie vor "1/x"
-      doc.font('Helvetica-Bold').fontSize(10);
-      doc.text('Palette', barX + mm(4), paletteLabelY);
+const fracLineHeight = doc.currentLineHeight();
+// um ~2 mm nach unten schieben, damit es nicht an der Linie klebt
+const fracTextY =
+  palletBarY + (barHeight3 - fracLineHeight) / 2 + mm(2);
+
+doc.text(fracText, barX + mm(2), fracTextY, {
+  width: barW - mm(4),
+  align: 'center',
+});
+
 
 
       // ===== 5) QR-Code zentriert darunter =====
