@@ -295,15 +295,18 @@ app.post('/make-labels', async (req, res) => {
         align: 'center',
       });
 
-      // ===== 4) "Palette" klein, unter dem Balken links =====
-      const paletteLabelY = palletBarY + barHeight3 + mm(3);
+      // ===== 4) "Palette" klein, ÜBER dem Paletten-Balken links =====
+      const paletteLabelY = palletBarY - mm(4); // etwas über der Linie vor "1/x"
       doc.font('Helvetica-Bold').fontSize(10);
       doc.text('Palette', barX + mm(4), paletteLabelY);
 
+
       // ===== 5) QR-Code zentriert darunter =====
-      const qrSize = mm(50); // etwas kleiner, um unten sicher Platz zu haben
+      const qrSize = mm(50);
       const qrX = outerX + (outerW - qrSize) / 2;
-      const qrY = paletteLabelY + mm(6);
+      // QR direkt unter dem Paletten-Balken
+      const qrY = palletBarY + barHeight3 + mm(4);
+
 
       // Todoist-Aufgabe für diese Palette
       const taskTitle = `${projectAndDrawing} – Palette ${i}/${count}`;
