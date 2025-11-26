@@ -228,7 +228,6 @@ app.post('/make-labels', async (req, res) => {
     const projectAndDrawing = `${rawProject} – ${rawDrawing}`;
 
     // Helper: Text in EINE Zeile passend machen
-    // maxPt = PPTX-Größe (ca. 66pt), minPt = Sicherheitsuntergrenze
     const fitOneLine = (text, fontName, maxPt, minPt, boxWidth) => {
       doc.font(fontName);
       for (let size = maxPt; size >= minPt; size--) {
@@ -240,69 +239,71 @@ app.post('/make-labels', async (req, res) => {
     for (let i = 1; i <= count; i++) {
       doc.addPage({ size: [pageW, pageH] });
 
-      // OPTION: Außenrahmen wie in der Folie
+      // ---------- Rahmen außen ----------
+      const outerMargin = mm(2);
+      const outerX = outerMargin;
+      const outerY = outerMargin;
+      const outerW = pageW - 2 * outerMargin;
+      const outerH = pageH - 2 * outerMargin;
+
       doc.lineWidth(1);
-      doc.rect(0, 0, pageW, pageH).stroke();
+      doc.rect(outerX, outerY, outerW, outerH).stroke();
 
-      // ---------- 1. Projekt und Zeichnung (oben, 2x 30mm) ----------
-      const boxFullWidth = pageW;
-      const projectBoxHeight = mm(30);
-      const drawingBoxHeight = mm(30);
+      // ---------- Balkenhöhen (angepasst an PPTX) ----------
+      const barHeight = mm(25);     // Projekt
+      const barHeight2 = mm(25);    // Zeichnung
+      const barHeight3 = mm(22);    // Paletten-Balken
 
-      // Projekt (Feld 0–30 mm)
-      const projectBoxY = mm(0);
-      const projSize = fitOneLine(rawProject, 'Helvetica-Bold', 66, 14, boxFullWidth - mm(4));
-      doc.font('Helvetica-Bold').fontSize(projSize);
-      doc.text(rawProject, mm(2), projectBoxY + mm(4), {
-        width: boxFullWidth - mm(4),
+      const projectY = outerY;
+      const drawingY = projectY + barHeight;
+      const palletBarY = drawingY + barHeight2;
+
+      const barX = outerX;
+      const barW = outerW;
+
+      // ===== 1) Projekt-Balken =====
+      doc.lineWidth(1.5);
+      doc.rect(barX, projectY, barW, barHeight).stroke();
+
+      const projFontSize = fitOneLine(rawProject, 'Helvetica-Bold', 66, 14, barW - mm(4));
+      doc.font('Helvetica-Bold').fontSize(projFontSize);
+      doc.text(rawProject, barX + mm(2), projectY + mm(4), {
+        width: barW - mm(4),
         align: 'center',
       });
 
-      // Zeichnung (Feld 30–60 mm)
-      const drawingBoxY = mm(30);
-      const drawSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 66, 14, boxFullWidth - mm(4));
-      doc.font('Helvetica-Bold').fontSize(drawSize);
-      doc.text(rawDrawing, mm(2), drawingBoxY + mm(4), {
-        width: boxFullWidth - mm(4),
+      // ===== 2) Zeichnungs-Balken =====
+      doc.rect(barX, drawingY, barW, barHeight2).stroke();
+
+      const drawFontSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 66, 14, barW - mm(4));
+      doc.font('Helvetica-Bold').fontSize(drawFontSize);
+      doc.text(rawDrawing, barX + mm(2), drawingY + mm(4), {
+        width: barW - mm(4),
         align: 'center',
       });
 
-      // Optional: dicker Rahmen nur um Projekt+Zeichnung
-      doc.lineWidth(2);
-      doc.rect(0, 0, boxFullWidth, projectBoxHeight + drawingBoxHeight).stroke();
-      doc.lineWidth(1); // wieder dünner fürs restliche Layout
+      // ===== 3) Paletten-Balken mit großer 1/x =====
+      doc.rect(barX, palletBarY, barW, barHeight3).stroke();
 
-      // ---------- 2. Zeile "Palette 1/x" (etwa bei 60–75 mm) ----------
-      const paletteRowTop = mm(68); // etwas unterhalb 60mm für Luft
-      const labelPalette = 'Palette';
-      const textFrac = `${i}/${count}`;
+      const fracText = `${i}/${count}`;
+      const fracFontSize = fitOneLine(fracText, 'Helvetica-Bold', 66, 18, barW - mm(4));
+      doc.font('Helvetica-Bold').fontSize(fracFontSize);
+      // vertikal zentriert im 3. Balken
+      const fracTextY = palletBarY + (barHeight3 - doc.currentLineHeight()) / 2;
+      doc.text(fracText, barX + mm(2), fracTextY, {
+        width: barW - mm(4),
+        align: 'center',
+      });
 
-      // Bruch max so groß wie Projekt
-      const fracSize = fitOneLine(textFrac, 'Helvetica-Bold', projSize, 14, boxFullWidth - mm(20));
-
-      // Breiten ermitteln
+      // ===== 4) "Palette" klein, unter dem Balken links =====
+      const paletteLabelY = palletBarY + barHeight3 + mm(3);
       doc.font('Helvetica-Bold').fontSize(10);
-      const paletteW = doc.widthOfString(labelPalette);
-      doc.font('Helvetica-Bold').fontSize(fracSize);
-      const fracW = doc.widthOfString(textFrac);
+      doc.text('Palette', barX + mm(4), paletteLabelY);
 
-      const totalW = paletteW + mm(3) + fracW;
-      const startX = (pageW - totalW) / 2;
-
-      // "Palette" (klein)
-      doc.font('Helvetica-Bold').fontSize(10);
-      doc.text(labelPalette, startX, paletteRowTop + mm(5));
-
-      // "1/x" (groß)
-      doc.font('Helvetica-Bold').fontSize(fracSize);
-      doc.text(textFrac, startX + paletteW + mm(3), paletteRowTop);
-
-      // ---------- 3. QR-Code mittig ----------
-      // QR-Bereich: ab ca. 80mm Höhe
-      const qrTop = mm(80);
-      const qrSize = mm(55); // etwas kleiner als PPTX, damit unten genug Platz bleibt
-      const qrX = (pageW - qrSize) / 2;
-      const qrY = qrTop;
+      // ===== 5) QR-Code zentriert darunter =====
+      const qrSize = mm(50); // etwas kleiner, um unten sicher Platz zu haben
+      const qrX = outerX + (outerW - qrSize) / 2;
+      const qrY = paletteLabelY + mm(6);
 
       // Todoist-Aufgabe für diese Palette
       const taskTitle = `${projectAndDrawing} – Palette ${i}/${count}`;
@@ -314,29 +315,30 @@ app.post('/make-labels', async (req, res) => {
       const completeUrl = `${base}/complete/${taskId}?sig=${sig}`;
       const qrPng = await QRCode.toBuffer(completeUrl, { type: 'png', margin: 0 });
 
+      // Rahmen für QR wie in der PPTX
+      doc.lineWidth(1);
+      doc.rect(qrX, qrY, qrSize, qrSize).stroke();
       doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
 
-      // ---------- 4. Footer (Datum+Kürzel links, Logo rechts) ----------
-      const footerTop = qrY + qrSize + mm(4); // direkt unter QR, aber noch deutlich vor Seitenende
+      // ===== 6) Footer: Datum/Kürzel links, Logo rechts =====
+      const footerTop = qrY + qrSize + mm(4);
 
-      // Datum + Kürzel links
       const footerText = packer ? `Erstellt: ${ts} · ${packer}` : `Erstellt: ${ts}`;
-      doc.font('Helvetica').fontSize(10);
-
-      // Einfacher Text ohne Breitenberechnung -> kein Pagebreak
-      doc.text(footerText, mm(2), footerTop, {
+      doc.font('Helvetica').fontSize(9);
+      // Einfach, ohne width/align → kein Pagebreak
+      doc.text(footerText, barX + mm(2), footerTop, {
         lineBreak: false,
       });
 
       // Logo rechts, proportional skaliert
-      const logoMaxW = mm(30);  // etwas größer zugelassen
-      const logoMaxH = mm(12);
-      const logoX = pageW - mm(2) - logoMaxW;
-      const logoY = footerTop - mm(2); // grob auf gleiche Höhe gesetzt
+      const logoMaxW = mm(18);
+      const logoMaxH = mm(10);
+      const logoX = outerX + outerW - logoMaxW - mm(2);
+      const logoY = footerTop - mm(2);
 
       try {
         doc.image(RESOLVED_LOGO_PATH, logoX, logoY, {
-          fit: [logoMaxW, logoMaxH], // Seitenverhältnis beibehalten
+          fit: [logoMaxW, logoMaxH],
           align: 'right',
           valign: 'top',
         });
@@ -344,7 +346,7 @@ app.post('/make-labels', async (req, res) => {
         console.warn('Logo konnte nicht geladen werden:', e.message);
       }
 
-      // Safety: Nicht mehr weiterzeichnen, damit PDFKit keinen Grund für Seite 2 hat
+      // Nichts mehr nach unten zeichnen → garantiert auf einer Seite
     }
 
     doc.end();
@@ -353,6 +355,7 @@ app.post('/make-labels', async (req, res) => {
     res.status(500).send('Fehler beim Erzeugen der Labels. Details in der Server-Konsole.');
   }
 });
+
 
 
 
