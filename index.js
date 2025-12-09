@@ -88,14 +88,21 @@ function signTaskId(taskId) {
   return crypto.createHmac('sha256', SIGNING_SECRET).update(String(taskId)).digest('hex');
 }
 
-async function createTodoistTask(content) {
+async function createTodoistTask(content, labelIds = []) {
   const payload = { content };
 
   const projectIdNum = Number(PROJECT_ID);
   if (Number.isFinite(projectIdNum)) {
     payload.project_id = projectIdNum;
   } else {
-    console.warn('WARNUNG: PROJECT_ID ist keine gültige Zahl, Aufgabe landet im Eingang. PROJECT_ID =', PROJECT_ID);
+    console.warn(
+      'WARNUNG: PROJECT_ID ist keine gültige Zahl, Aufgabe landet im Eingang. PROJECT_ID =',
+      PROJECT_ID
+    );
+  }
+
+  if (Array.isArray(labelIds) && labelIds.length > 0) {
+    payload.label_ids = labelIds;
   }
 
   const res = await td.post('/tasks', payload, {
@@ -104,6 +111,7 @@ async function createTodoistTask(content) {
 
   return res.data;
 }
+
 
 async function closeTask(taskId) {
   await td.post(`/tasks/${taskId}/close`);
@@ -190,17 +198,139 @@ app.get('/', (_req, res) => {
 /* =========================
    PDF + Tasks erzeugen (geschützt)
    ========================= */
+/* =========================
+   Normalisierung Projekt & Zeichnung
+   ========================= */
+
+// Projekt: "XXYY1234" oder "XXYY1234K"
+function normalizeProject(raw) {
+  if (!raw) return '';
+
+  // alles groß, alle Nicht-Alphanumerischen raus
+  let s = raw.toUpperCase().replace(/[^A-Z0-9K]/g, '').trim();
+
+  // Optionales K am Ende merken
+  let hasK = s.endsWith('K');
+  if (hasK) s = s.slice(0, -1);
+
+  // Buchstaben + Ziffern trennen
+  const letters = (s.match(/[A-Z]/g) || []).join('');
+  const digits = (s.match(/\d/g) || []).join('');
+
+  // 4 Buchstaben + 4 Ziffern rekonstruieren, soweit vorhanden
+  const partLetters = (letters + 'XXXX').slice(0, 4); // notfalls auffüllen
+  const partDigits = (digits + '0000').slice(0, 4);
+
+  let result = partLetters + partDigits;
+  if (hasK) result += 'K';
+
+  return result;
+}
+
+// Freitext → Titel-Schreibweise: "tür vorne rechts" -> "Tür Vorne Rechts"
+function toTitleCase(str) {
+  return str
+    .trim()
+    .split(/\s+/)
+    .map((w) =>
+      w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''
+    )
+    .join(' ');
+}
+
+// Zeichnung: BL-Codes + Freitext erkennen und aufbereiten
+function normalizeDrawing(raw) {
+  if (!raw) return '';
+
+  const input = raw.trim();
+
+  const tokens = [];
+  const re = /[Bb][Ll]\s*\d+/g;
+  let lastIndex = 0;
+  let match;
+
+  // BL-Codes und Freitext in der ursprünglichen Reihenfolge aufteilen
+  while ((match = re.exec(input)) !== null) {
+    const pre = input.slice(lastIndex, match.index).trim();
+    if (pre) {
+      tokens.push({ type: 'text', value: pre });
+    }
+    tokens.push({ type: 'bl', value: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+  const tail = input.slice(lastIndex).trim();
+  if (tail) {
+    tokens.push({ type: 'text', value: tail });
+  }
+
+  if (tokens.length === 0) {
+    // nur Freitext, kein "BL"
+    return toTitleCase(input);
+  }
+
+  const resultParts = tokens.map((t) => {
+    if (t.type === 'bl') {
+      // BL-Code normalisieren
+      let s = t.value.toUpperCase().replace(/\s+/g, '');
+      // s z.B. "BL1", "BL07", "BL123"
+      let num = s.slice(2).replace(/\D/g, '');
+      if (!num) num = '0';
+      // zweistellig, letzte 2 Zeichen
+      num = num.padStart(2, '0').slice(-2);
+      return 'BL' + num;
+    } else {
+      // Freitext: Title Case
+      return toTitleCase(t.value);
+    }
+  });
+
+  return resultParts.join(', ');
+}
+/* =========================
+   Todoist Label-Handling
+   ========================= */
+
+const labelCache = new Map();
+
+async function ensureProjectLabelId(labelName) {
+  if (labelCache.has(labelName)) {
+    return labelCache.get(labelName);
+  }
+
+  // alle Labels laden
+  const res = await td.get('/labels');
+  const labels = res.data || res.body || [];
+
+  const existing = labels.find((l) => l.name === labelName);
+  if (existing) {
+    labelCache.set(labelName, existing.id);
+    return existing.id;
+  }
+
+  // neues Label anlegen
+  const createRes = await td.post('/labels', { name: labelName }, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const created = createRes.data;
+  labelCache.set(labelName, created.id);
+  return created.id;
+}
 
 app.post('/make-labels', async (req, res) => {
   try {
     const rawProject = (req.body.project || '').trim();
     const rawDrawing = (req.body.drawing || '').trim();
     let count = parseInt(req.body.count, 10);
-    const packer = (req.body.packer || '').trim(); // Kürzel optional
+    const packer = (req.body.packer || '').trim();
 
-    if (!rawProject || !rawDrawing || !Number.isFinite(count)) {
-      return res.status(400).send('Bitte Projekt, Zeichnungsnummer und Anzahl korrekt angeben.');
-    }
+    // NEU: Projekt & Zeichnung normalisieren
+    const project = normalizeProject(rawProject);
+    const drawing = normalizeDrawing(rawDrawing);
+
+    if (!project || !drawing || !Number.isFinite(count)) {
+      return res.status(400).send('Bitte Projekt, Zeichnung und Anzahl korrekt angeben.');
+}
+
 
     count = Math.max(1, Math.min(50, count));
     const createdAt = new Date();
@@ -225,7 +355,7 @@ app.post('/make-labels', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     doc.pipe(res);
 
-    const projectAndDrawing = `${rawProject} – ${rawDrawing}`;
+    const projectAndDrawing = `${project} – ${drawing}`;
 
     // Helper: Text in EINE Zeile passend machen
     const fitOneLine = (text, fontName, maxPt, minPt, boxWidth) => {
@@ -235,7 +365,7 @@ app.post('/make-labels', async (req, res) => {
       }
       return minPt;
     };
-
+const projectLabelId = await ensureProjectLabelId(project);
     for (let i = 1; i <= count; i++) {
       doc.addPage({ size: [pageW, pageH] });
 
@@ -265,9 +395,9 @@ app.post('/make-labels', async (req, res) => {
       doc.lineWidth(1.5);
       doc.rect(barX, projectY, barW, barHeight).stroke();
 
-      const projFontSize = fitOneLine(rawProject, 'Helvetica-Bold', 66, 14, barW - mm(4));
+      const projFontSize = fitOneLine(project, 'Helvetica-Bold', 66, 14, barW - mm(4));
       doc.font('Helvetica-Bold').fontSize(projFontSize);
-      doc.text(rawProject, barX + mm(2), projectY + mm(4), {
+      doc.text(project, barX + mm(2), projectY + mm(4), {
         width: barW - mm(4),
         align: 'center',
       });
@@ -275,9 +405,9 @@ app.post('/make-labels', async (req, res) => {
       // ===== 2) Zeichnungs-Balken =====
       doc.rect(barX, drawingY, barW, barHeight2).stroke();
 
-      const drawFontSize = fitOneLine(rawDrawing, 'Helvetica-Bold', 66, 14, barW - mm(4));
+      const drawFontSize = fitOneLine(drawing, 'Helvetica-Bold', 66, 14, barW - mm(4));
       doc.font('Helvetica-Bold').fontSize(drawFontSize);
-      doc.text(rawDrawing, barX + mm(2), drawingY + mm(4), {
+      doc.text(drawing, barX + mm(2), drawingY + mm(4), {
         width: barW - mm(4),
         align: 'center',
       });
@@ -315,7 +445,7 @@ doc.text(fracText, barX + mm(2), fracTextY, {
 
       // Todoist-Aufgabe für diese Palette
       const taskTitle = `${projectAndDrawing} – Palette ${i}/${count}`;
-      const task = await createTodoistTask(taskTitle);
+      const task = await createTodoistTask(taskTitle, [projectLabelId]);
       const taskId = task.id;
 
       const sig = signTaskId(taskId);
