@@ -88,7 +88,7 @@ function signTaskId(taskId) {
   return crypto.createHmac('sha256', SIGNING_SECRET).update(String(taskId)).digest('hex');
 }
 
-async function createTodoistTask(content, labelIds = []) {
+async function createTodoistTask(content, labelNames = []) {
   const payload = { content };
 
   const projectIdNum = Number(PROJECT_ID);
@@ -101,8 +101,9 @@ async function createTodoistTask(content, labelIds = []) {
     );
   }
 
-  if (Array.isArray(labelIds) && labelIds.length > 0) {
-    payload.label_ids = labelIds;
+  // NEU: Labels als Namen (Strings), nicht als IDs
+  if (Array.isArray(labelNames) && labelNames.length > 0) {
+    payload.labels = labelNames;
   }
 
   const res = await td.post('/tasks', payload, {
@@ -111,6 +112,7 @@ async function createTodoistTask(content, labelIds = []) {
 
   return res.data;
 }
+
 
 
 async function closeTask(taskId) {
@@ -365,7 +367,7 @@ app.post('/make-labels', async (req, res) => {
       }
       return minPt;
     };
-const projectLabelId = await ensureProjectLabelId(project);
+
     for (let i = 1; i <= count; i++) {
       doc.addPage({ size: [pageW, pageH] });
 
@@ -445,7 +447,7 @@ doc.text(fracText, barX + mm(2), fracTextY, {
 
       // Todoist-Aufgabe für diese Palette
       const taskTitle = `${projectAndDrawing} – Palette ${i}/${count}`;
-      const task = await createTodoistTask(taskTitle, [projectLabelId]);
+      const task = await createTodoistTask(taskTitle, [project]);
       const taskId = task.id;
 
       const sig = signTaskId(taskId);
