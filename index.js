@@ -142,7 +142,34 @@ app.get('/complete/:taskId', async (req, res) => {
     }
 
     await closeTask(taskId);
-    return res.redirect(`https://todoist.com/showTask?id=${taskId}`);
+    await closeTask(taskId);
+
+return res.type('html').send(`
+  <!doctype html>
+  <html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ausbuchung</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+      .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      h1 { margin-top: 0; }
+      button { padding: 12px 16px; border-radius: 10px; border: 0; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>✅ Ware erfolgreich ausgebucht</h1>
+      <button onclick="window.close()">Fenster schließen</button>
+      <p style="font-size:12px;color:#666;margin-top:14px;">
+        Falls das nicht geht: Tab schließen oder Zurück.
+      </p>
+    </div>
+  </body>
+  </html>
+`);
+
   } catch (err) {
     console.error('Complete-Fehler:', err?.response?.data || err.message);
     res.status(500).send('Fehler beim Schließen der Aufgabe.');
@@ -202,8 +229,58 @@ app.post('/scan/:taskId', async (req, res) => {
     }
 
     if (answer === 'yes') {
-      return res.redirect(`/complete/${taskId}?sig=${sig}`);
-    }
+  try {
+  await closeTask(taskId);
+} catch (e) {
+  console.error('Todoist closeTask Fehler:', e?.response?.data || e.message);
+
+  return res.status(502).type('html').send(`
+    <!doctype html>
+    <html lang="de">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Fehler</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+        .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>⚠️ Ausbuchung fehlgeschlagen</h1>
+        <p>Die Aufgabe konnte gerade nicht in Todoist erledigt werden.</p>
+        <p>Bitte nochmal scannen oder später erneut versuchen.</p>
+      </div>
+    </body>
+    </html>
+  `);
+}
+
+return res.type('html').send(`
+  <!doctype html>
+  <html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ausbuchung</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+      .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>✅ Ware erfolgreich ausgebucht</h1>
+      <p>Die Aufgabe wurde in Todoist erledigt.</p>
+      <button onclick="window.close()">Fenster schließen</button>
+    </div>
+  </body>
+  </html>
+`);
+
+}
+
 
     return res.type('html').send(`
       <!doctype html>
@@ -585,5 +662,6 @@ doc.text(fracText, barX + mm(2), fracTextY, {
 app.listen(PORT, () => {
   const base = BASE_URL.replace(/\/$/, '');
   console.log(`Server läuft auf Port ${PORT}`);
-  console.log(`Formular: ${base}`);
+  console.log(`Formular: ${BASE_URL.replace(/\/$/, '')}/`);
+
 });
