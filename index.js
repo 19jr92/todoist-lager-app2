@@ -148,6 +148,84 @@ app.get('/complete/:taskId', async (req, res) => {
     res.status(500).send('Fehler beim Schließen der Aufgabe.');
   }
 });
+app.get('/scan/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { sig } = req.query;
+
+    const expected = signTaskId(taskId);
+    if (!sig || sig !== expected) {
+      return res.status(403).send('Ungültige Signatur.');
+    }
+
+    res.type('html').send(`
+      <!doctype html>
+      <html lang="de">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Ware ausbuchen?</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 2rem; }
+          .box { max-width: 420px; margin: 0 auto; }
+          h1 { font-size: 1.4rem; }
+          button { width: 100%; padding: 1rem; margin-top: .75rem; font-size: 1.1rem; }
+          .yes { font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="box">
+          <h1>Ware ausbuchen?</h1>
+          <form method="POST" action="/scan/${taskId}?sig=${sig}">
+            <button class="yes" type="submit" name="answer" value="yes">Ja</button>
+            <button type="submit" name="answer" value="no">Nein</button>
+          </form>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('Scan-Fehler:', err?.response?.data || err.message);
+    res.status(500).send('Fehler beim Laden der Scan-Seite.');
+  }
+});
+
+app.post('/scan/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { sig } = req.query;
+    const { answer } = req.body;
+
+    const expected = signTaskId(taskId);
+    if (!sig || sig !== expected) {
+      return res.status(403).send('Ungültige Signatur.');
+    }
+
+    if (answer === 'yes') {
+      return res.redirect(`/complete/${taskId}?sig=${sig}`);
+    }
+
+    return res.type('html').send(`
+      <!doctype html>
+      <html lang="de">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Abgebrochen</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+        </style>
+      </head>
+      <body>
+        <h2>Abgebrochen – es wurde nichts erledigt.</h2>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('Scan-POST Fehler:', err?.response?.data || err.message);
+    res.status(500).send('Fehler beim Verarbeiten der Scan-Antwort.');
+  }
+});
 
 /* =========================
    Formular (geschützt durch Basic Auth)
@@ -452,7 +530,7 @@ doc.text(fracText, barX + mm(2), fracTextY, {
 
       const sig = signTaskId(taskId);
       const base = BASE_URL.replace(/\/$/, '');
-      const completeUrl = `${base}/complete/${taskId}?sig=${sig}`;
+      const completeUrl = `${base}/scan/${taskId}?sig=${sig}`;
       const qrPng = await QRCode.toBuffer(completeUrl, { type: 'png', margin: 0 });
 
       // Rahmen für QR wie in der PPTX
