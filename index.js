@@ -50,9 +50,14 @@ const mm = (v) => v * 2.835; // 1 mm ~ 2.835pt
 
 function basicAuth(req, res, next) {
   // öffentliche Routen: Health + QR-Complete
-  if (req.path.startsWith('/health') || req.path.startsWith('/complete')) {
-    return next();
-  }
+  if (
+  req.path.startsWith('/health') ||
+  req.path.startsWith('/scan') ||
+  req.path.startsWith('/complete')
+) {
+  return next();
+}
+
 
   const authHeader = req.headers.authorization || '';
 
