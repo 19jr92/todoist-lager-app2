@@ -8,7 +8,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import avRoutes from "./av/avRoutes.js";
-import "dotenv/config";
 
 // Pfade ermitteln (für logo.png)
 const __filename = fileURLToPath(import.meta.url);
@@ -916,6 +915,63 @@ app.get("/av", (_req, res) => {
         .row button { width: 50%; }
         .muted { font-size:12px; color:#666; margin-top:14px; }
         .hide { display:none; }
+        .printBtn {
+  padding: 14px 16px;
+  font-size: 1.05rem;
+  border-radius: 12px;
+  width: 100%;
+}
+
+/* Druckbereich */
+#printArea {
+  display: none;
+}
+
+@media print {
+  /* erst alles unsichtbar machen (aber Layout bleibt existierend) */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* nur den Printbereich sichtbar machen */
+  #printArea, #printArea * {
+    visibility: visible !important;
+  }
+
+  /* Printbereich fix auf die Seite legen */
+  #printArea {
+    display: block !important;
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    padding: 20mm;
+    background: #fff;
+    font-family: Arial, sans-serif;
+  }
+
+  .printTitle {
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 12mm;
+  }
+
+  .printMeta {
+    font-size: 16px;
+    margin-bottom: 12mm;
+  }
+
+  #printQrImg {
+    width: 140mm;
+    height: 140mm;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+  }
+}
+
+
       </style>
     </head>
     <body>
@@ -936,15 +992,31 @@ app.get("/av", (_req, res) => {
           <div class="row">
             <button id="copyBtn" type="button">Link kopieren</button>
             <button id="waBtn" type="button">WhatsApp</button>
-            <div style="margin-top:16px; text-align:center;">
+            
+          </div>
+<div style="margin-top:16px; text-align:center;">
   <div style="font-size:12px; color:#666; margin-bottom:8px;">QR-Code zum Scannen</div>
-  <img id="qrImg" alt="QR-Code" style="max-width:260px; width:100%; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff;">
-  <div style="margin-top:10px;">
-    <button type="button" onclick="window.print()">Drucken</button>
+
+  <img id="qrImg"
+       alt="QR-Code"
+       style="max-width:260px; width:100%; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff;">
+
+  <div style="margin-top:12px;">
+    <button class="printBtn" type="button" onclick="setTimeout(() => window.print(), 200)">Drucken</button>
   </div>
 </div>
 
-          </div>
+<!-- NUR FÜR DRUCK -->
+<div id="printArea">
+  <div class="printTitle">Ladeliste</div>
+  <div class="printMeta">
+    <div><b>Kommission:</b> <span id="printLabel"></span></div>
+    <div><b>Datum:</b> <span id="printDate"></span></div>
+  </div>
+  <div style="text-align:center;">
+    <img id="printQrImg" alt="QR-Code Druck" />
+  </div>
+</div>
 
           <p class="muted">Tipp: Link kopieren und an den Logistiker schicken oder per WhatsApp teilen.</p>
         </div>
@@ -984,10 +1056,14 @@ app.get("/av", (_req, res) => {
           }
 
           document.getElementById("listUrl").value = data.url;
-document.getElementById("result").classList.remove("hide");
-
-// ✅ QR-Code anzeigen (vom Backend)
+          document.getElementById("result").classList.remove("hide");
+          // QR anzeigen (vom Backend)
 document.getElementById("qrImg").src = data.qrDataUrl;
+
+// Print-Felder befüllen
+document.getElementById("printLabel").textContent = label;
+document.getElementById("printDate").textContent = new Date().toLocaleString("de-DE");
+document.getElementById("printQrImg").src = data.qrDataUrl;
 
         });
 
@@ -1105,7 +1181,7 @@ app.get("/av/list/:id", async (req, res) => {
 
 app.listen(PORT, () => {
   const base = BASE_URL.replace(/\/$/, '');
-  console.log(`Server läuft auf Port ${PORT}`);
+  console.log(`AV-Server läuft auf Port ${PORT}`);
   console.log(`Formular: ${BASE_URL.replace(/\/$/, '')}/`);
 
 });
