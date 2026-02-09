@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 // Pfade ermitteln (für logo.png)
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,44 @@ app.use(express.json());
    Helper: mm -> Punkte
    ========================= */
 const mm = (v) => v * 2.835; // 1 mm ~ 2.835pt
+/* =========================
+   Ausbuch-Log (lokal)
+   ========================= */
+
+// Render: persistentes Dateisystem gibt's nur eingeschränkt.
+// Für den Anfang ok. Später könnten wir auf Render-Postgres umstellen.
+const LOG_FILE = path.join(__dirname, 'ausbuch-log.json');
+
+function readOutLog() {
+  try {
+    if (!fs.existsSync(LOG_FILE)) return {};
+    const raw = fs.readFileSync(LOG_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    console.error('Log lesen fehlgeschlagen:', e.message);
+    return {};
+  }
+}
+
+function writeOutLog(logObj) {
+  try {
+    fs.writeFileSync(LOG_FILE, JSON.stringify(logObj, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Log schreiben fehlgeschlagen:', e.message);
+  }
+}
+
+// taskId -> ISO timestamp
+function setCompletedInLog(taskId, isoDateString) {
+  const logObj = readOutLog();
+  logObj[String(taskId)] = isoDateString;
+  writeOutLog(logObj);
+}
+
+function getCompletedFromLog(taskId) {
+  const logObj = readOutLog();
+  return logObj[String(taskId)] || null;
+}
 
 /* =========================
    Basic Auth für geschützte Routen
@@ -123,6 +162,36 @@ async function createTodoistTask(content, labelNames = []) {
 async function closeTask(taskId) {
   await td.post(`/tasks/${taskId}/close`);
 }
+async function getTask(taskId) {
+  const res = await td.get(`/tasks/${taskId}`);
+  return res.data;
+}
+
+
+// ✅ NEU: alle offenen Aufgaben einer Kommission (Label) holen
+async function listOpenTasksByLabel(labelName) {
+  // /tasks liefert ohnehin nur NICHT erledigte Aufgaben.
+  // Daher: nur nach Label filtern.
+  const res = await td.get('/tasks', {
+    params: {
+      filter: `@${labelName}`
+    }
+  });
+  return res.data || [];
+}
+
+
+// ✅ NEU: Sortierung nach Priorität → alphabetisch
+function sortTasksByPriorityAndName(tasks) {
+  return [...tasks].sort((a, b) => {
+    // Todoist: priority 4 = höchste Priorität
+    if (a.priority !== b.priority) {
+      return b.priority - a.priority;
+    }
+    return a.content.localeCompare(b.content, 'de');
+  });
+}
+
 
 /* =========================
    Healthcheck (öffentlich)
@@ -145,6 +214,37 @@ app.get('/complete/:taskId', async (req, res) => {
     if (!sig || sig !== expected) {
       return res.status(403).send('Ungültige Signatur.');
     }
+    const completedAtIso = getCompletedFromLog(taskId);
+if (completedAtIso) {
+  const dt = new Date(completedAtIso);
+  const completedAtDE = new Intl.DateTimeFormat('de-DE', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(dt);
+
+  return res.type('html').send(`
+    <!doctype html>
+    <html lang="de">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Bereits ausgebucht</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+        .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>ℹ️ Palette bereits ausgebucht</h1>
+        <p>Diese Palette wurde am <b>${completedAtDE}</b> ausgebucht.</p>
+        <button onclick="window.close()">Fenster schließen</button>
+      </div>
+    </body>
+    </html>
+  `);
+}
+
 
     await closeTask(taskId);
     await closeTask(taskId);
@@ -190,7 +290,41 @@ app.get('/scan/:taskId', async (req, res) => {
       return res.status(403).send('Ungültige Signatur.');
     }
 
-    res.type('html').send(`
+    // ✅ NEU: Schon ausgebucht? -> sofort Info anzeigen, nicht erneut fragen
+    const completedAtIso = getCompletedFromLog(taskId);
+    if (completedAtIso) {
+      const dt = new Date(completedAtIso);
+      const completedAtDE = new Intl.DateTimeFormat('de-DE', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      }).format(dt);
+
+      return res.type('html').send(`
+        <!doctype html>
+        <html lang="de">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Bereits ausgebucht</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+            .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+            button { padding: 12px 16px; border-radius: 10px; border: 0; cursor: pointer; }
+          </style>
+        </head>
+        <body>
+          <div class="box">
+            <h1>ℹ️ Palette bereits ausgebucht</h1>
+            <p>Diese Palette wurde am <b>${completedAtDE}</b> ausgebucht.</p>
+            <button onclick="window.close()">Fenster schließen</button>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    // sonst normal fragen:
+    return res.type('html').send(`
       <!doctype html>
       <html lang="de">
       <head>
@@ -222,6 +356,7 @@ app.get('/scan/:taskId', async (req, res) => {
   }
 });
 
+
 app.post('/scan/:taskId', async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -234,33 +369,118 @@ app.post('/scan/:taskId', async (req, res) => {
     }
 
     if (answer === 'yes') {
-  try {
-  await closeTask(taskId);
+      let labelName = null;
+try {
+  const t = await getTask(taskId);
+  // Todoist REST: labels sind Namen (Strings)
+  if (Array.isArray(t.labels) && t.labels.length > 0) {
+    labelName = t.labels[0]; // Kommission-Label (bei dir genau 1)
+  }
 } catch (e) {
-  console.error('Todoist closeTask Fehler:', e?.response?.data || e.message);
+  console.warn('Konnte Task nicht laden (Label unbekannt):', e?.response?.data || e.message);
+}
 
-  return res.status(502).type('html').send(`
+// 1) Aufgabe in Todoist schließen
+      try {
+        await closeTask(taskId);
+      } catch (e) {
+        console.error('Todoist closeTask Fehler:', e?.response?.data || e.message);
+
+        return res.status(502).type('html').send(`
+          <!doctype html>
+          <html lang="de">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Fehler</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+              .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="box">
+              <h1>⚠️ Ausbuchung fehlgeschlagen</h1>
+              <p>Die Aufgabe konnte gerade nicht in Todoist erledigt werden.</p>
+              <p>Bitte nochmal scannen oder später erneut versuchen.</p>
+            </div>
+          </body>
+          </html>
+        `);
+      }
+
+      // 2) ✅ Ausbuch-Datum im eigenen Log speichern
+      const completedAt = new Date().toISOString();
+      setCompletedInLog(taskId, completedAt);
+        let remaining = [];
+if (labelName) {
+  try {
+    remaining = await listOpenTasksByLabel(labelName);
+    remaining = sortTasksByPriorityAndName(remaining);
+
+  } catch (e) {
+    console.error('Fehler beim Laden restlicher Paletten:', e?.response?.data || e.message);
+  }
+}
+
+      // 3) Erfolg anzeigen
+      if (!labelName) {
+  return res.type('html').send(`
     <!doctype html>
     <html lang="de">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Fehler</title>
+      <title>Ausbuchung</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
-        .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+        .box { max-width: 720px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
       </style>
     </head>
     <body>
       <div class="box">
-        <h1>⚠️ Ausbuchung fehlgeschlagen</h1>
-        <p>Die Aufgabe konnte gerade nicht in Todoist erledigt werden.</p>
-        <p>Bitte nochmal scannen oder später erneut versuchen.</p>
+        <h1>✅ Ware erfolgreich ausgebucht</h1>
+        <p>Die Aufgabe wurde erledigt.</p>
+        <p><b>Hinweis:</b> Kommissions-Label konnte nicht ermittelt werden, daher keine Restliste.</p>
+        <button onclick="window.close()">Fenster schließen</button>
       </div>
     </body>
     </html>
   `);
 }
+
+if (remaining.length === 0) {
+  return res.type('html').send(`
+    <!doctype html>
+    <html lang="de">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Ausbuchung</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+        .box { max-width: 720px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <h1>✅ Ware erfolgreich ausgebucht</h1>
+        <p><b>Alle Paletten der Kommission wurden verladen.</b></p>
+        <button onclick="window.close()">Fenster schließen</button>
+      </div>
+    </body>
+    </html>
+  `);
+}
+
+// Liste bauen (Priorität + Text)
+const rows = remaining.map(t => {
+  // Todoist: 4 höchste -> Anzeige als "Prio 1"
+  const prioAnzeige = (5 - (t.priority || 1));
+  const safeText = String(t.content || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return `<tr><td style="padding:8px; border-bottom:1px solid #eee; width:90px;"><b>Prio ${prioAnzeige}</b></td>
+              <td style="padding:8px; border-bottom:1px solid #eee;">${safeText}</td></tr>`;
+}).join('');
 
 return res.type('html').send(`
   <!doctype html>
@@ -270,23 +490,29 @@ return res.type('html').send(`
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ausbuchung</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
-      .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      .box { max-width: 720px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+      h1 { margin-top: 0; }
+      table { width:100%; border-collapse: collapse; margin-top: 12px; }
+      .small { color:#666; font-size: 12px; margin-top: 10px; }
+      button { margin-top: 16px; padding: 12px 16px; border-radius: 10px; border: 0; cursor: pointer; }
     </style>
   </head>
   <body>
     <div class="box">
       <h1>✅ Ware erfolgreich ausgebucht</h1>
-      <p>Die Aufgabe wurde in Todoist erledigt.</p>
+      <h2>Weitere Paletten zu dieser Kommission</h2>
+      <div class="small">Sortierung: Priorität (hoch→niedrig), dann alphabetisch</div>
+      <table>${rows}</table>
       <button onclick="window.close()">Fenster schließen</button>
     </div>
   </body>
   </html>
 `);
 
-}
+    }
 
-
+    // answer === 'no' oder alles andere:
     return res.type('html').send(`
       <!doctype html>
       <html lang="de">
@@ -296,10 +522,13 @@ return res.type('html').send(`
         <title>Abgebrochen</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 2rem; text-align:center; }
+          .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
         </style>
       </head>
       <body>
-        <h2>Abgebrochen – es wurde nichts erledigt.</h2>
+        <div class="box">
+          <h2>Abgebrochen – Palette wurde nicht ausgebucht.</h2>
+        </div>
       </body>
       </html>
     `);
@@ -308,6 +537,7 @@ return res.type('html').send(`
     res.status(500).send('Fehler beim Verarbeiten der Scan-Antwort.');
   }
 });
+
 
 /* =========================
    Formular (geschützt durch Basic Auth)
