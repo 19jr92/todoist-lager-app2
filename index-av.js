@@ -545,49 +545,10 @@ return res.type('html').send(`
    Formular (geschützt durch Basic Auth)
    ========================= */
 
-app.get('/', (_req, res) => {
-  res.type('html').send(`
-    <!doctype html>
-    <html lang="de">
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Paletten-Labels erzeugen</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; }
-        label { display:block; margin-top:.8rem; }
-        input[type="text"], input[type="number"] {
-          padding:.5rem; width: 320px; max-width: 90%;
-        }
-        button { margin-top:1rem; padding:.6rem 1.2rem; font-size:1rem; }
-        .hint { margin-top:1.5rem; color:#444; font-size:.9rem; }
-      </style>
-    </head>
-    <body>
-      <h1>Paletten-Labels erzeugen</h1>
-      <form method="POST" action="/make-labels" target="_blank">
-        <label>Projekt:
-          <input required name="project" type="text" placeholder="z. B. BEFR0124" />
-        </label>
-        <label>Zeichnungsnummer:
-          <input required name="drawing" type="text" placeholder="z. B. BL22" />
-        </label>
-        <label>Anzahl Paletten:
-          <input required name="count" type="number" min="1" max="50" value="1" />
-        </label>
-        <label>Gepackt von (Kürzel, optional):
-          <input name="packer" type="text" placeholder="mm" maxlength="8" />
-        </label>
-        <button type="submit">PDF erzeugen</button>
-      </form>
-      <p class="hint">
-        Für jede Palette wird eine Todoist-Aufgabe erzeugt und ein QR eingebettet.<br>
-        QR-Scan → Aufgabe wird automatisch erledigt.
-      </p>
-    </body>
-    </html>
-  `);
+app.get("/", (_req, res) => {
+  return res.redirect("/av");
 });
+
 
 /* =========================
    PDF + Tasks erzeugen (geschützt)
