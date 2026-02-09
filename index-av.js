@@ -1078,15 +1078,24 @@ app.get("/av/list/:id", async (req, res) => {
     }
 
     const itemsHtml = (data.items || []).map(it => {
-      const prio = it.priority ?? "";
-      const content = (it.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `
-        <tr>
-          <td style="text-align:center; width:60px;"><b>${prio}</b></td>
-          <td>${content}</td>
-        </tr>
-      `;
-    }).join("");
+  // Todoist: 4 = höchste → Anzeige: Prio 1
+  const todoistPrio = it.priority ?? 1;
+  const displayPrio = 5 - todoistPrio;
+
+  const content = (it.content || "")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  return `
+    <tr>
+      <td style="text-align:center; width:60px;">
+        <b>Prio ${displayPrio}</b>
+      </td>
+      <td>${content}</td>
+    </tr>
+  `;
+}).join("");
+
 
     return res.type("html").send(`
       <!doctype html>
