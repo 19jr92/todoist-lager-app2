@@ -695,13 +695,13 @@ app.post('/make-labels', async (req, res) => {
 }
 
 
-    count = Math.max(1, Math.min(50, count));
-    const createdAt = new Date();
-    const completedAtDE = new Intl.DateTimeFormat('de-DE', {
+const createdAt = new Date();
+const ts = new Intl.DateTimeFormat('de-DE', {
   dateStyle: 'short',
   timeStyle: 'medium',
   timeZone: 'Europe/Berlin',
 }).format(createdAt);
+
 
 
 
@@ -856,7 +856,11 @@ doc.text(fracText, barX + mm(2), fracTextY, {
     doc.end();
   } catch (e) {
     console.error('make-labels Fehler:', e?.response?.data || e.message);
-    res.status(500).send('Fehler beim Erzeugen der Labels. Details in der Server-Konsole.');
+if (!res.headersSent) {
+  res.status(500).send('Fehler beim Erzeugen der Labels. Details in der Server-Konsole.');
+} else {
+  try { res.end(); } catch (_) {}
+}
   }
 });
 
