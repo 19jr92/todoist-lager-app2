@@ -6,9 +6,9 @@ import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 import avRoutes from "./av/avRoutes.js";
 import "dotenv/config";
+import { getCompletedAt, setCompleted } from "./ausbuchLogStore.js";
 
 // Pfade ermitteln (für logo.png)
 const __filename = fileURLToPath(import.meta.url);
@@ -47,44 +47,6 @@ app.use(avRoutes);
    Helper: mm -> Punkte
    ========================= */
 const mm = (v) => v * 2.835; // 1 mm ~ 2.835pt
-/* =========================
-   Ausbuch-Log (lokal)
-   ========================= */
-
-// Render: persistentes Dateisystem gibt's nur eingeschränkt.
-// Für den Anfang ok. Später könnten wir auf Render-Postgres umstellen.
-const LOG_FILE = path.join(__dirname, 'ausbuch-log.json');
-
-function readOutLog() {
-  try {
-    if (!fs.existsSync(LOG_FILE)) return {};
-    const raw = fs.readFileSync(LOG_FILE, 'utf8');
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    console.error('Log lesen fehlgeschlagen:', e.message);
-    return {};
-  }
-}
-
-function writeOutLog(logObj) {
-  try {
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logObj, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Log schreiben fehlgeschlagen:', e.message);
-  }
-}
-
-// taskId -> ISO timestamp
-function setCompletedInLog(taskId, isoDateString) {
-  const logObj = readOutLog();
-  logObj[String(taskId)] = isoDateString;
-  writeOutLog(logObj);
-}
-
-function getCompletedFromLog(taskId) {
-  const logObj = readOutLog();
-  return logObj[String(taskId)] || null;
-}
 
 /* =========================
    Basic Auth für geschützte Routen
@@ -217,7 +179,7 @@ app.get('/complete/:taskId', async (req, res) => {
     if (!sig || sig !== expected) {
       return res.status(403).send('Ungültige Signatur.');
     }
-    const completedAtIso = getCompletedFromLog(taskId);
+    const completedAtIso = await getCompletedAt(taskId);
 if (completedAtIso) {
   const dt = new Date(completedAtIso);
   const completedAtDE = new Intl.DateTimeFormat('de-DE', {
@@ -248,9 +210,10 @@ if (completedAtIso) {
   `);
 }
 
+    await closeTask(taskId);
+    const completedAt = new Date().toISOString();
+await setCompleted(taskId, completedAt);
 
-    await closeTask(taskId);
-    await closeTask(taskId);
 
 return res.type('html').send(`
   <!doctype html>
@@ -294,7 +257,7 @@ app.get('/scan/:taskId', async (req, res) => {
     }
 
     // ✅ NEU: Schon ausgebucht? -> sofort Info anzeigen, nicht erneut fragen
-    const completedAtIso = getCompletedFromLog(taskId);
+    const completedAtIso = await getCompletedAt(taskId);
     if (completedAtIso) {
       const dt = new Date(completedAtIso);
       const completedAtDE = new Intl.DateTimeFormat('de-DE', {
@@ -414,7 +377,7 @@ try {
 
       // 2) ✅ Ausbuch-Datum im eigenen Log speichern
       const completedAt = new Date().toISOString();
-      setCompletedInLog(taskId, completedAt);
+      await setCompleted(taskId, completedAt);
         let remaining = [];
 if (labelName) {
   try {
@@ -905,17 +868,130 @@ app.get("/av", (_req, res) => {
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>AV – Ladeliste</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; }
-        .box { max-width: 520px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
-        h1 { margin-top: 0; font-size: 1.4rem; }
+        body { font-family: Arial, sans-serif; margin: 2rem; background:#fafafa; }
+
+        .box {
+          max-width: 920px;
+          margin: 0 auto;
+          background:#fff;
+          border: 1px solid #e6e6e6;
+          border-radius: 14px;
+          padding: 18px;
+        }
+
+        h1 { margin: 0 0 14px 0; font-size: 1.35rem; }
+
         label { display:block; margin-top: 12px; margin-bottom: 6px; font-weight: bold; }
-        select, input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ccc; }
-        button { width: 100%; padding: 1rem; margin-top: .75rem; font-size: 1.1rem; border-radius: 10px; border: 0; cursor: pointer; }
+
+        select, input {
+          width: 100%;
+          padding: 12px;
+          border-radius: 10px;
+          border: 1px solid #ccc;
+          font-size: 16px;
+          box-sizing: border-box;
+        }
+
+        .btn {
+          padding: 12px 14px;
+          border-radius: 10px;
+          border: 0;
+          cursor: pointer;
+          font-size: 16px;
+          width: 100%;
+        }
+
         .primary { font-weight: bold; }
-        .row { display:flex; gap:10px; margin-top: .75rem; }
+
+        .resultGrid {
+          display: grid;
+          grid-template-columns: 1.2fr 0.8fr;
+          gap: 16px;
+          margin-top: 16px;
+          align-items: start;
+        }
+
+        .card {
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 14px;
+          background: #fff;
+        }
+
+        .row {
+          display:flex;
+          gap:10px;
+          margin-top: 10px;
+        }
+
         .row button { width: 50%; }
-        .muted { font-size:12px; color:#666; margin-top:14px; }
+
+        .muted { font-size:12px; color:#666; margin-top:12px; }
         .hide { display:none; }
+
+        /* QR Box */
+        .qrWrap { text-align:center; }
+        .qrTitle { font-size:12px; color:#666; margin-bottom:10px; }
+        #qrImg {
+          width: 100%;
+          max-width: 260px;
+          border: 1px solid #eee;
+          border-radius: 12px;
+          padding: 10px;
+          background:#fff;
+          box-sizing: border-box;
+        }
+
+        .printBtn {
+          margin-top: 12px;
+        }
+
+        /* Druckbereich */
+        #printArea { display:none; }
+
+        @media print {
+          /* alles verstecken */
+          body * { visibility: hidden !important; }
+
+          /* nur Druckbereich anzeigen */
+          #printArea, #printArea * { visibility: visible !important; }
+
+          #printArea {
+            display: block !important;
+            position: fixed;
+            left: 0;
+            top: 0;
+            right: 0;
+            padding: 18mm;
+            background: #fff;
+            font-family: Arial, sans-serif;
+          }
+
+          .printTitle {
+            text-align:center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10mm;
+          }
+
+          .printMeta {
+            font-size: 16px;
+            margin-bottom: 10mm;
+          }
+
+          #printQrImg {
+            width: 50mm;
+            height: 50mm;
+            object-fit: contain;
+            display:block;
+            margin: 0 auto;
+          }
+        }
+
+        /* mobil: untereinander */
+        @media (max-width: 780px) {
+          .resultGrid { grid-template-columns: 1fr; }
+        }
       </style>
     </head>
     <body>
@@ -927,26 +1003,42 @@ app.get("/av", (_req, res) => {
           <option value="">– bitte wählen –</option>
         </select>
 
-        <button class="primary" id="createBtn" type="button">Ladeliste erstellen</button>
+        <button class="btn primary" id="createBtn" type="button">Ladeliste erstellen</button>
 
-        <div id="result" class="hide">
-          <label for="listUrl">Link für Logistiker / Fahrer</label>
-          <input id="listUrl" type="text" readonly />
+        <div id="result" class="hide resultGrid">
+          <!-- Links: Link + Aktionen -->
+          <div class="card">
+            <label for="listUrl">Link für Logistiker / Fahrer</label>
+            <input id="listUrl" type="text" readonly />
 
-          <div class="row">
-            <button id="copyBtn" type="button">Link kopieren</button>
-            <button id="waBtn" type="button">WhatsApp</button>
-            <div style="margin-top:16px; text-align:center;">
-  <div style="font-size:12px; color:#666; margin-bottom:8px;">QR-Code zum Scannen</div>
-  <img id="qrImg" alt="QR-Code" style="max-width:260px; width:100%; border:1px solid #eee; border-radius:12px; padding:10px; background:#fff;">
-  <div style="margin-top:10px;">
-    <button type="button" onclick="window.print()">Drucken</button>
-  </div>
-</div>
+            <div class="row">
+              <button class="btn" id="copyBtn" type="button">Link kopieren</button>
+              <button class="btn" id="waBtn" type="button">WhatsApp</button>
+            </div>
 
+            <p class="muted">Tipp: Link kopieren und an den Logistiker schicken oder per WhatsApp teilen.</p>
           </div>
 
-          <p class="muted">Tipp: Link kopieren und an den Logistiker schicken oder per WhatsApp teilen.</p>
+          <!-- Rechts: QR + Print -->
+          <div class="card qrWrap">
+            <div class="qrTitle">QR-Code zum Scannen</div>
+            <img id="qrImg" alt="QR-Code">
+            <div class="printBtn">
+              <button class="btn" type="button" id="printBtn">Drucken</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NUR FÜR DRUCK -->
+      <div id="printArea">
+        <div class="printTitle">Ladeliste</div>
+        <div class="printMeta">
+          <div><b>Kommission:</b> <span id="printLabel"></span></div>
+          <div><b>Datum:</b> <span id="printDate"></span></div>
+        </div>
+        <div style="text-align:center;">
+          <img id="printQrImg" alt="QR-Code Druck" />
         </div>
       </div>
 
@@ -984,11 +1076,15 @@ app.get("/av", (_req, res) => {
           }
 
           document.getElementById("listUrl").value = data.url;
-document.getElementById("result").classList.remove("hide");
+          document.getElementById("result").classList.remove("hide");
 
-// ✅ QR-Code anzeigen (vom Backend)
-document.getElementById("qrImg").src = data.qrDataUrl;
+          // QR anzeigen
+          document.getElementById("qrImg").src = data.qrDataUrl;
 
+          // Print-Felder befüllen
+          document.getElementById("printLabel").textContent = label;
+          document.getElementById("printDate").textContent = new Date().toLocaleString("de-DE");
+          document.getElementById("printQrImg").src = data.qrDataUrl;
         });
 
         document.getElementById("copyBtn").addEventListener("click", async () => {
@@ -1001,6 +1097,11 @@ document.getElementById("qrImg").src = data.qrDataUrl;
           const url = document.getElementById("listUrl").value;
           const wa = "https://wa.me/?text=" + encodeURIComponent(url);
           window.open(wa, "_blank");
+        });
+
+        document.getElementById("printBtn").addEventListener("click", () => {
+          // kleine Verzögerung, damit Bild sicher geladen ist
+          setTimeout(() => window.print(), 200);
         });
 
         loadLabels();
@@ -1041,15 +1142,23 @@ app.get("/av/list/:id", async (req, res) => {
     }
 
     const itemsHtml = (data.items || []).map(it => {
-      const prio = it.priority ?? "";
-      const content = (it.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `
-        <tr>
-          <td style="text-align:center; width:60px;"><b>${prio}</b></td>
-          <td>${content}</td>
-        </tr>
-      `;
-    }).join("");
+  const todoistPrio = it.priority ?? 1;
+  const displayPrio = 5 - todoistPrio; // 🔥 Umdrehung für Anzeige
+
+  const content = (it.content || "")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  return `
+    <tr>
+      <td style="text-align:center; width:60px;">
+        <b>Prio ${displayPrio}</b>
+      </td>
+      <td>${content}</td>
+    </tr>
+  `;
+}).join("");
+
 
     return res.type("html").send(`
       <!doctype html>
