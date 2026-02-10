@@ -183,9 +183,12 @@ app.get('/complete/:taskId', async (req, res) => {
 if (completedAtIso) {
   const dt = new Date(completedAtIso);
   const completedAtDE = new Intl.DateTimeFormat('de-DE', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  }).format(dt);
+  dateStyle: 'short',
+  timeStyle: 'medium',
+  timeZone: 'Europe/Berlin',
+}).format(dt);
+
+
 
   return res.type('html').send(`
     <!doctype html>
@@ -211,8 +214,8 @@ if (completedAtIso) {
 }
 
     await closeTask(taskId);
-    const completedAt = new Date().toISOString();
-await setCompleted(taskId, completedAt);
+    await setCompleted(taskId);
+
 
 
 return res.type('html').send(`
@@ -261,9 +264,11 @@ app.get('/scan/:taskId', async (req, res) => {
     if (completedAtIso) {
       const dt = new Date(completedAtIso);
       const completedAtDE = new Intl.DateTimeFormat('de-DE', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      }).format(dt);
+  dateStyle: 'short',
+  timeStyle: 'medium',
+  timeZone: 'Europe/Berlin',
+}).format(dt);
+
 
       return res.type('html').send(`
         <!doctype html>
@@ -376,8 +381,8 @@ try {
       }
 
       // 2) ✅ Ausbuch-Datum im eigenen Log speichern
-      const completedAt = new Date().toISOString();
-      await setCompleted(taskId, completedAt);
+      await setCompleted(taskId);
+
         let remaining = [];
 if (labelName) {
   try {
@@ -692,10 +697,13 @@ app.post('/make-labels', async (req, res) => {
 
     count = Math.max(1, Math.min(50, count));
     const createdAt = new Date();
-    const ts = new Intl.DateTimeFormat('de-DE', {
-      dateStyle: 'short',
-      timeStyle: 'medium',
-    }).format(createdAt);
+    const completedAtDE = new Intl.DateTimeFormat('de-DE', {
+  dateStyle: 'short',
+  timeStyle: 'medium',
+  timeZone: 'Europe/Berlin',
+}).format(dt);
+
+
 
     // Seitenformat: 100 x 150 mm (Hochformat)
     const pageW = mm(100);
