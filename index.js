@@ -701,7 +701,7 @@ app.post('/make-labels', async (req, res) => {
   dateStyle: 'short',
   timeStyle: 'medium',
   timeZone: 'Europe/Berlin',
-}).format(dt);
+}).format(createdAt);
 
 
 
