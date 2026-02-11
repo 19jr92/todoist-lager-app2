@@ -36,7 +36,11 @@ function sortTasks(tasks) {
 router.get("/api/av/labels", async (req, res) => {
   try {
     // 1) Alle Tasks aus dem Paletten-Projekt holen
-    const tasks = await todoistGet(`/tasks?project_id=${TODOIST_PROJECT_ID}`);
+    const projectId = process.env.PROJECT_ID;
+if (!projectId) return res.status(500).json({ error: "PROJECT_ID fehlt (ENV)" });
+
+const tasks = await todoistGet(`/tasks?project_id=${projectId}`);
+
 
     // 2) Labels, die dort wirklich vorkommen, einsammeln
     const used = new Set();
@@ -62,7 +66,11 @@ router.post("/api/av/create", async (req, res) => {
     const { label } = req.body;
     if (!label) return res.status(400).json({ error: "label fehlt" });
 
-    const tasks = await todoistGet(`/tasks?project_id=${TODOIST_PROJECT_ID}`);
+    const projectId = process.env.PROJECT_ID;
+if (!projectId) return res.status(500).json({ error: "PROJECT_ID fehlt (ENV)" });
+
+const tasks = await todoistGet(`/tasks?project_id=${projectId}`);
+
     const filtered = tasks.filter(t => Array.isArray(t.labels) && t.labels.includes(label));
     const sorted = sortTasks(filtered);
 
