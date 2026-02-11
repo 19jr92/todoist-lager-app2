@@ -2,20 +2,28 @@
 import express from "express";
 import { avLists } from "./store.js";
 import QRCode from "qrcode";
+import crypto from "crypto";
 
 const router = express.Router();
 
-const TODOIST_TOKEN = process.env.TODOIST_TOKEN;
-const TODOIST_PROJECT_ID = process.env.PROJECT_ID;
-
 
 async function todoistGet(path) {
+  const token = process.env.TODOIST_TOKEN;
+  if (!token) throw new Error("TODOIST_TOKEN fehlt (ENV)");
+
   const res = await fetch(`https://api.todoist.com/api/v1${path}`, {
-    headers: { Authorization: `Bearer ${TODOIST_TOKEN}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Todoist error ${res.status}`);
-  return res.json();
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(`Todoist error ${res.status}: ${JSON.stringify(data)}`);
+  }
+
+  return data?.results ?? data;
 }
+
 
 function sortTasks(tasks) {
   return tasks.sort((a, b) => {
