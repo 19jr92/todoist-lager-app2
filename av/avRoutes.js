@@ -10,7 +10,7 @@ const TODOIST_PROJECT_ID = process.env.PROJECT_ID;
 
 
 async function todoistGet(path) {
-  const res = await fetch(`https://api.todoist.com/rest/v2${path}`, {
+  const res = await fetch(`https://api.todoist.com/api/v1${path}`, {
     headers: { Authorization: `Bearer ${TODOIST_TOKEN}` },
   });
   if (!res.ok) throw new Error(`Todoist error ${res.status}`);

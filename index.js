@@ -89,7 +89,7 @@ app.use(basicAuth);
    ========================= */
 
 const td = axios.create({
-  baseURL: 'https://api.todoist.com/rest/v2',
+  baseURL: 'https://api.todoist.com/api/v1',
   headers: { Authorization: `Bearer ${TODOIST_TOKEN}` },
 });
 
@@ -100,15 +100,12 @@ function signTaskId(taskId) {
 async function createTodoistTask(content, labelNames = []) {
   const payload = { content };
 
-  const projectIdNum = Number(PROJECT_ID);
-  if (Number.isFinite(projectIdNum)) {
-    payload.project_id = projectIdNum;
-  } else {
-    console.warn(
-      'WARNUNG: PROJECT_ID ist keine gültige Zahl, Aufgabe landet im Eingang. PROJECT_ID =',
-      PROJECT_ID
-    );
-  }
+  if (PROJECT_ID && String(PROJECT_ID).trim().length > 0) {
+  payload.project_id = String(PROJECT_ID).trim();
+} else {
+  console.warn('WARNUNG: PROJECT_ID ist leer, Aufgabe landet im Eingang.');
+}
+
 
   // NEU: Labels als Namen (Strings), nicht als IDs
   if (Array.isArray(labelNames) && labelNames.length > 0) {
