@@ -132,17 +132,26 @@ async function getTask(taskId) {
 
 // ✅ NEU: alle offenen Aufgaben einer Kommission (Label) holen
 async function listOpenTasksByLabel(labelName) {
+  const projectId = String(PROJECT_ID || "").trim();
+  if (!projectId) return [];
+
+  // 1) Erst nur Tasks aus DEM Projekt holen
   const res = await td.get("/tasks", {
-    params: {
-      // API v1: filter_query statt filter
-      filter_query: `@${labelName}`,
-    },
+    params: { project_id: projectId },
   });
 
   // API v1 liefert teils { results: [...] }
-  const data = res.data;
-  return (data?.results ?? data) || [];
+  const all = (res.data?.results ?? res.data) || [];
+  if (!Array.isArray(all)) return [];
+
+  // 2) Dann lokal nach Label filtern
+  const filtered = all.filter(
+    (t) => Array.isArray(t.labels) && t.labels.includes(labelName)
+  );
+
+  return filtered;
 }
+
 
 
 
