@@ -132,15 +132,18 @@ async function getTask(taskId) {
 
 // ✅ NEU: alle offenen Aufgaben einer Kommission (Label) holen
 async function listOpenTasksByLabel(labelName) {
-  // /tasks liefert ohnehin nur NICHT erledigte Aufgaben.
-  // Daher: nur nach Label filtern.
-  const res = await td.get('/tasks', {
+  const res = await td.get("/tasks", {
     params: {
-      filter: `@${labelName}`
-    }
+      // API v1: filter_query statt filter
+      filter_query: `@${labelName}`,
+    },
   });
-  return res.data || [];
+
+  // API v1 liefert teils { results: [...] }
+  const data = res.data;
+  return (data?.results ?? data) || [];
 }
+
 
 
 // ✅ NEU: Sortierung nach Priorität → alphabetisch
